@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import os
 import sys
 from datetime import datetime, timezone
@@ -14,23 +15,69 @@ def now_iso() -> str:
 
 
 def main() -> int:
-    config = load_config(os.environ.get("TCG_CONFIG", "config.toml"))
+    config = load_config(
+        os.environ.get("TCG_CONFIG", "config.toml")
+    )
+
     http_get = make_httpx_get()
 
     oracle = None
+
     if config.pricing is not None and config.pricing.enabled:
         from .pricing.oracle import Oracle
-        oracle = Oracle.load(config.pricing.index_path, config.pricing.fx_path,
-                             config.pricing.deal_threshold, config.pricing.match_threshold)
 
+        oracle = Oracle.load(
+            config.pricing.index_path,
+            config.pricing.fx_path,
+            config.pricing.deal_threshold,
+            config.pricing.match_threshold,
+        )
+
+    # Existing webhooks
     deals_url = os.environ["DISCORD_DEALS_WEBHOOK"]
     tracker_url = os.environ["DISCORD_TRACKER_WEBHOOK"]
+
     post_loud = make_discord_poster(deals_url)
     post_quiet = make_discord_poster(tracker_url)
 
-    state_dir = Path(os.environ.get("TCG_STATE_DIR", "state"))
-    report = run_once(config, http_get, post_loud, post_quiet, state_dir, now_iso(), oracle=oracle)
+    # Franchise-specific webhooks
+    post_pokemon = make_discord_poster(
+        os.environ["DISCORD_POKEMON_WEBHOOK"]
+    )
+
+    post_one_piece = make_discord_poster(
+        os.environ["DISCORD_ONEPIECE_WEBHOOK"]
+    )
+
+    post_dragon_ball = make_discord_poster(
+        os.environ["DISCORD_DRAGONBALL_WEBHOOK"]
+    )
+
+    # Dedicated in-stock webhook
+    post_instock = make_discord_poster(
+        os.environ["DISCORD_INSTOCK_WEBHOOK"]
+    )
+
+    state_dir = Path(
+        os.environ.get("TCG_STATE_DIR", "state")
+    )
+
+    report = run_once(
+        config,
+        http_get,
+        post_loud,
+        post_quiet,
+        state_dir,
+        now_iso(),
+        oracle=oracle,
+        post_pokemon=post_pokemon,
+        post_one_piece=post_one_piece,
+        post_dragon_ball=post_dragon_ball,
+        post_instock=post_instock,
+    )
+
     print("RUN:", report.summary())
+
     return 0
 
 
