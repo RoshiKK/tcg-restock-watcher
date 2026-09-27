@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
@@ -8,6 +9,7 @@ from .filtering import filter_franchises, keep_sealed
 from .state import load_snapshot, merge_snapshot, save_snapshot, snapshot_path
 from .diff import detect_events
 from .notify import send_events, route_deal_or_urgent
+
 
 _ADAPTERS = {
     "shopify": shopify.fetch_products,
@@ -31,53 +33,120 @@ class RunReport:
         )
 
 
-def run_once(config: Config, http_get, post_loud, post_quiet, state_dir, now_iso, oracle=None) -> RunReport:
+def run_once(
+    config: Config,
+    http_get,
+    post_loud,
+    post_quiet,
+    state_dir,
+    now_iso,
+    oracle=None,
+    post_pokemon=None,
+    post_one_piece=None,
+    post_dragon_ball=None,
+    post_instock=None,
+) -> RunReport:
     report = RunReport()
     state_dir = Path(state_dir)
 
     for store in config.stores:
         if not store.enabled:
             continue
+
         adapter = _ADAPTERS.get(store.platform)
+
         if adapter is None:
             report.stores_failed += 1
             print(f"[{store.key}] no adapter for platform={store.platform}")
             continue
+
         try:
             products = adapter(store, http_get)
         except Exception as exc:
             report.stores_failed += 1
-            print(f"[{store.key}] adapter failed: {type(exc).__name__}: {exc}")
+            print(
+                f"[{store.key}] adapter failed: "
+                f"{type(exc).__name__}: {exc}"
+            )
             continue
 
         if store.collections and not store.filter_collections:
             watched = products
         else:
-            watched = keep_sealed(filter_franchises(products, config.franchise_synonyms))
+            watched = keep_sealed(
+                filter_franchises(
+                    products,
+                    config.franchise_synonyms,
+                )
+            )
 
-        prev = load_snapshot(snapshot_path(state_dir, store.key))
+        prev = load_snapshot(
+            snapshot_path(state_dir, store.key)
+        )
 
         if not prev.get("seeded"):
-            save_snapshot(snapshot_path(state_dir, store.key), merge_snapshot(prev, watched, now_iso))
+            save_snapshot(
+                snapshot_path(state_dir, store.key),
+                merge_snapshot(prev, watched, now_iso),
+            )
+
             report.seeded.append(store.key)
             report.stores_ok += 1
-            print(f"[{store.key}] seeded {len(watched)} watched variants (no alerts)")
+
+            print(
+                f"[{store.key}] seeded {len(watched)} "
+                f"watched variants (no alerts)"
+            )
             continue
 
-        events = detect_events(watched, prev, config.price_epsilon, config.price_change_pct)
+        events = detect_events(
+            watched,
+            prev,
+            config.price_epsilon,
+            config.price_change_pct,
+        )
+
         if oracle is not None:
-            events = [replace(e, verdict=oracle.verdict(e.product)) for e in events]
+            events = [
+                replace(
+                    event,
+                    verdict=oracle.verdict(event.product),
+                )
+                for event in events
+            ]
+
         try:
             report.events_sent += send_events(
-                events, post_loud, post_quiet, config.max_events_per_store,
-                route=route_deal_or_urgent, delay_seconds=config.post_delay_seconds,
+                events,
+                post_loud,
+                post_quiet,
+                config.max_events_per_store,
+                route=route_deal_or_urgent,
+                delay_seconds=config.post_delay_seconds,
+                post_pokemon=post_pokemon,
+                post_one_piece=post_one_piece,
+                post_dragon_ball=post_dragon_ball,
+                post_instock=post_instock,
             )
+
             report.stores_ok += 1
-            print(f"[{store.key}] {len(watched)} watched, {len(events)} events")
+
+            print(
+                f"[{store.key}] {len(watched)} watched, "
+                f"{len(events)} events"
+            )
+
         except Exception as exc:
             report.stores_failed += 1
-            print(f"[{store.key}] post failed: {type(exc).__name__}: {exc}")
+            print(
+                f"[{store.key}] post failed: "
+                f"{type(exc).__name__}: {exc}"
+            )
+
         finally:
-            save_snapshot(snapshot_path(state_dir, store.key), merge_snapshot(prev, watched, now_iso))
+            save_snapshot(
+                snapshot_path(state_dir, store.key),
+                merge_snapshot(prev, watched, now_iso),
+            )
 
     return report
