@@ -1,8 +1,9 @@
 name: watch
+
 on:
   schedule:
-    # Hourly backstop only (GitHub throttles free-tier schedules to ~2-3h anyway).
-    # cron-job.org drives the real ~5-min cadence via workflow_dispatch.
+    # Hourly backstop only.
+    # cron-job.org can trigger the workflow more frequently via workflow_dispatch.
     - cron: "0 * * * *"
   workflow_dispatch:
 
@@ -17,14 +18,25 @@ jobs:
   watch:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+
     steps:
       - uses: actions/checkout@v4
+
       - uses: astral-sh/setup-uv@v5
+
       - run: uv sync --frozen
+
       - name: Run watcher
         env:
           DISCORD_DEALS_WEBHOOK: ${{ secrets.DISCORD_DEALS_WEBHOOK }}
           DISCORD_TRACKER_WEBHOOK: ${{ secrets.DISCORD_TRACKER_WEBHOOK }}
+
+          DISCORD_POKEMON_WEBHOOK: ${{ secrets.DISCORD_POKEMON_WEBHOOK }}
+          DISCORD_ONEPIECE_WEBHOOK: ${{ secrets.DISCORD_ONEPIECE_WEBHOOK }}
+          DISCORD_DRAGONBALL_WEBHOOK: ${{ secrets.DISCORD_DRAGONBALL_WEBHOOK }}
+          DISCORD_INSTOCK_WEBHOOK: ${{ secrets.DISCORD_INSTOCK_WEBHOOK }}
+
         run: uv run python -m tcg_watcher
+
       - name: Commit state
         run: bash scripts/commit_state.sh
